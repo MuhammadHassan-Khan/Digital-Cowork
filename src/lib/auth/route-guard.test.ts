@@ -19,11 +19,14 @@ describe("classifyPath", () => {
     expect(classifyPath("/onboarding")).toBe("protected");
     expect(classifyPath("/rooms")).toBe("protected");
     expect(classifyPath("/rooms/xyz")).toBe("protected");
+    expect(classifyPath("/invite")).toBe("protected");
+    expect(classifyPath("/invite/some-token")).toBe("protected");
   });
 
   it("does not match prefixes partially", () => {
     expect(classifyPath("/discovery-land")).toBe("public");
     expect(classifyPath("/profiling")).toBe("public");
+    expect(classifyPath("/invited-friend")).toBe("public");
     expect(classifyPath("/")).toBe("public");
     expect(classifyPath("/auth/confirm")).toBe("public");
   });

@@ -15,6 +15,7 @@ const PROTECTED_PREFIXES = [
   "/profile",
   "/onboarding",
   "/rooms",
+  "/invite",
   "/settings",
 ] as const;
 

@@ -11,7 +11,7 @@ import type { ExperienceLevel } from "@/lib/validation/profile";
 
 const NAV_ITEMS = [
   { href: "/discover", label: "Discover" },
-  // "/rooms" joins the nav when the rooms module ships (Stage 2 / Step 3).
+  { href: "/rooms", label: "Rooms" },
   { href: "/profile/edit", label: "My profile" },
 ] as const;
 

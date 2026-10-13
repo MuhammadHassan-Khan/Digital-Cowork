@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { fieldErrorsOf } from "@/lib/validation/form-errors";
 import { parseSkillsInput, profileSchema } from "@/lib/validation/profile";
 
 /**
@@ -18,17 +19,6 @@ export interface ProfileFormState {
   ok?: boolean;
   error?: string;
   fieldErrors?: Record<string, string[]>;
-}
-
-function fieldErrorsOf(error: {
-  issues: { path: PropertyKey[]; message: string }[];
-}): Record<string, string[]> {
-  const fieldErrors: Record<string, string[]> = {};
-  for (const issue of error.issues) {
-    const key = String(issue.path[0] ?? "form");
-    (fieldErrors[key] ??= []).push(issue.message);
-  }
-  return fieldErrors;
 }
 
 const DB_MISSING_CODES = new Set(["PGRST205", "42P01"]);
