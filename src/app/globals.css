@@ -1,0 +1,111 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Design tokens (light + auto dark via prefers-color-scheme).
+   Semantic names only: components use bg-background / text-muted-foreground /
+   bg-primary etc., never raw hex values.
+--------------------------------------------------------------------------- */
+:root {
+  --background: #f6f6f9;
+  --foreground: #18181b;
+  --card: #ffffff;
+  --card-foreground: #18181b;
+  --muted: #eeeef2;
+  --muted-foreground: #666672;
+  --border: #e2e2e8;
+  --input: #d4d4dc;
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --primary-foreground: #ffffff;
+  --ring: #6366f1;
+  --success: #16a34a;
+  --success-foreground: #ffffff;
+  --warning-bg: #fef9c3;
+  --warning-border: #fde047;
+  --warning-foreground: #713f12;
+  --danger: #dc2626;
+  --danger-foreground: #ffffff;
+  --danger-bg: #fef2f2;
+  --danger-border: #fecaca;
+  --danger-text: #991b1b;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0c0c11;
+    --foreground: #ededf2;
+    --card: #14141b;
+    --card-foreground: #ededf2;
+    --muted: #1d1d26;
+    --muted-foreground: #9a9aa8;
+    --border: #26262f;
+    --input: #34343f;
+    --primary: #6366f1;
+    --primary-hover: #818cf8;
+    --primary-foreground: #ffffff;
+    --ring: #818cf8;
+    --success: #22c55e;
+    --success-foreground: #052e16;
+    --warning-bg: #422e04;
+    --warning-border: #854d0e;
+    --warning-foreground: #fde68a;
+    --danger: #ef4444;
+    --danger-foreground: #ffffff;
+    --danger-bg: #2a1113;
+    --danger-border: #7f1d1d;
+    --danger-text: #fca5a5;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning-bg: var(--warning-bg);
+  --color-warning-border: var(--warning-border);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-danger-bg: var(--danger-bg);
+  --color-danger-border: var(--danger-border);
+  --color-danger-text: var(--danger-text);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  text-rendering: optimizeLegibility;
+}
+
+/* Consistent, visible keyboard focus everywhere. */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Respect reduced-motion preferences. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
