@@ -12,5 +12,11 @@
 export const SEAT_TTL_MINUTES = 15;
 export const SEAT_TTL_MS = SEAT_TTL_MINUTES * 60_000;
 
-/** How often the open room page renews its seat (must be < SEAT_TTL_MS). */
-export const SEAT_HEARTBEAT_MS = 5 * 60_000;
+/**
+ * How often the open room page renews its seat (must be < SEAT_TTL_MS).
+ *
+ * Kept at 1 minute so host actions (close room / remove participant)
+ * propagate to seated members within a single beat: the renewal answers
+ * `ok: false`, the client refreshes, and the live session unmounts.
+ */
+export const SEAT_HEARTBEAT_MS = 60_000;

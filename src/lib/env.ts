@@ -8,10 +8,13 @@
  */
 
 const HTTP_URL = /^https?:\/\/\S+$/;
+const WS_URL = /^wss?:\/\/\S+$/;
 
 export const env = {
   supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
   supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
+  /** Public WebSocket URL of the LiveKit deployment (browser connects here). */
+  livekitUrl: process.env.NEXT_PUBLIC_LIVEKIT_URL ?? "",
 };
 
 /**
@@ -23,4 +26,15 @@ export const env = {
  */
 export function isSupabaseConfigured(): boolean {
   return HTTP_URL.test(env.supabaseUrl) && env.supabaseAnonKey.length > 0;
+}
+
+/**
+ * True when the PUBLIC LiveKit URL is present and well-formed.
+ *
+ * The full LiveKit configuration (including the server-only API key/secret)
+ * is verified by `isLivekitConfigured()` in `src/lib/livekit/server.ts` —
+ * this helper only tells the browser half of the story.
+ */
+export function isLivekitUrlConfigured(): boolean {
+  return WS_URL.test(env.livekitUrl);
 }

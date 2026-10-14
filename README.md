@@ -14,7 +14,7 @@ truthful failure states, server-side authorization.
 |---|---|---|
 | 1 — Foundation, auth, profiles, discovery | Steps 1–2 | ✅ Built & verified (typecheck/tests/lint/build) — live end-to-end test pending real Supabase credentials |
 | 2 — Rooms + invites + capacity | Step 3 | ✅ Built & verified (typecheck/tests/lint/build) — live end-to-end test pending real Supabase credentials |
-| 3 — LiveKit voice/video/chat | Step 4 | ⬜ Not started |
+| 3 — LiveKit voice/video/chat | Step 4 | ✅ Built & verified (typecheck/tests/lint/build) — live end-to-end test pending real Supabase + LiveKit credentials |
 | 4 — Screen sharing (1 share → gated multi-share) | Step 5 | ⬜ Not started |
 | 5 — Resilience + security hardening | Step 6 | ⬜ Not started |
 | 6 — Final verification + report | Step 7 | ⬜ Not started |
@@ -47,11 +47,13 @@ Then fill in values:
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase Dashboard → Project Settings → API → Project URL | Stage 1 |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Same page → anon/public key | Stage 1 |
 | `SUPABASE_SERVICE_ROLE_KEY` | Same page → service_role key (**server-only — never expose**) | Later stages |
-| `LIVEKIT_URL` | cloud.livekit.io → project → Settings (`wss://…`) | Stage 3 |
+| `NEXT_PUBLIC_LIVEKIT_URL` | cloud.livekit.io → project → Settings/Keys (`wss://…`) | Stage 3 |
 | `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` (**server-only**) | Same page | Stage 3 |
 
 Without Supabase keys the app still runs and shows a clear
 "Supabase is not configured" notice on auth pages (no fake success).
+Without LiveKit keys, seated members see a truthful
+"Media service not configured" notice on the room page — no fake session.
 
 ### 3. Create the Supabase project & apply the schema
 
@@ -89,7 +91,20 @@ If you keep confirmation ON (production-like), configure
 The app handles both link shapes (`token_hash` and PKCE `code`, including
 `?code=` links landing on the homepage).
 
-### 5. Run
+### 5. Configure LiveKit (Stage 3: voice/video/chat)
+
+1. Create a free account at https://cloud.livekit.io and a project.
+2. Open **Settings → Keys** and copy the three values into `.env.local`:
+   - **Project URL / WebSocket URL** → `NEXT_PUBLIC_LIVEKIT_URL` (`wss://…`)
+   - **API Key** → `LIVEKIT_API_KEY`
+   - **API Secret** → `LIVEKIT_API_SECRET`
+
+Free-tier quotas are real (participant-minutes/participant counts) — see
+`ZERO_BUDGET_CAPABILITIES.md` and check the dashboard before demos. All
+three values are required together; partial configuration still shows the
+"not configured" notice.
+
+### 6. Run
 
 ```bash
 npm run dev        # http://localhost:3000
@@ -131,14 +146,46 @@ npm run dev        # http://localhost:3000
   database under a per-room advisory lock, so simultaneous join attempts
   for the last seat resolve to exactly one winner.
 - **Seats expire:** reservations carry a 15-minute TTL; the open room page
-  renews every 5 minutes (`SeatHeartbeat`, replaceable by LiveKit presence
-  in Stage 3). A crashed browser cannot block a room.
+  renews every 60 seconds (`SeatHeartbeat`) — fast enough for host actions
+  (close/remove) to propagate within one beat. A crashed browser cannot
+  block a room.
 - **Invites are capabilities:** 32 random bytes per link, shown once, stored
   only as sha256 (`room_invites.token_hash`), revocable, optionally expiring,
   max 5 active per room. Guests resolve them through `get_room_invite`
   (RLS keeps the table host-only).
 - **Host controls:** close room, remove a participant, revoke invites —
   checked explicitly in actions for clear messages, enforced for real by RLS.
+
+### Stage 3 (LiveKit voice/video/chat)
+- **Token endpoint:** `POST /api/rooms/[id]/token` (`src/app/api/…`) is the
+  only way into the media room. It self-authorizes (`/api/*` skips the
+  proxy): verifies the Supabase session with `getUser()`, re-checks RLS
+  visibility, an **active seat** (the Stage 2 capacity gate) and open room
+  status, rate-limits (20/min per user), then mints a **1-hour token**
+  bound to identity = user id, grants = this one room only, join +
+  subscribe + publish + data — no admin/create/record powers
+  (`src/lib/livekit/token.ts`, unit-tested with the official verifier).
+- **Pure authorization core:** the endpoint's decision matrix
+  (`src/lib/livekit/authorize.ts`) and sliding-window limiter
+  (`src/lib/livekit/rate-limit.ts`) are dependency-free and covered by
+  tests (503/401/429/404/403/409 paths).
+- **Session UI:** `RoomSession` requests a token, connects with
+  `livekit-client` via `@livekit/components-react`, joins **without
+  mic/camera** (permissions requested only on explicit toggles), and
+  renders participant tiles, connection state, toggles and ephemeral chat
+  (LiveKit data packets — `ChatPanel` keeps messages in memory and says
+  so; nothing is persisted). Permission denial, unreachable server, closed
+  room and missing keys all render truthful notices — never fake media.
+- **Presence reconciliation:** the seat heartbeat (60 s) stays the single
+  seat-truth mechanism. `renewSeatAction` now answers `ok: false` for
+  closed rooms; on any refusal the page refreshes, the session unmounts
+  and LiveKit disconnects. Host close/remove additionally kick participants
+  out of LiveKit **best-effort** via `RoomServiceClient`
+  (`src/lib/livekit/server.ts`, 3 s timeouts) — if that call fails, the
+  heartbeat fallback still ends the session within one beat.
+- **Server-only secrets:** `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` are read
+  exclusively in `src/lib/livekit/server.ts` (`server-only`), so they can
+  never reach the browser bundle.
 
 ## Known limitations (by design, per PRD)
 
@@ -189,4 +236,30 @@ With **two browsers/profiles** signed in as two different members:
 6. **Capacity race:** open the same near-full room in 3+ browsers and join
    simultaneously — occupancy never exceeds capacity (advisory lock).
 7. **Heartbeat:** with the room page open >15 min, the seat stays held
-   (renews every 5 min); closing the tab frees it after the TTL.
+   (renews every minute); closing the tab frees it after the TTL.
+
+## Manual test checklist (Stage 3 — voice/video/chat)
+
+With **Supabase + LiveKit keys configured** and two browsers signed in:
+
+1. **Config state:** remove the LiveKit keys → a seated member sees
+   “Media service not configured” (with the exact variable names), never a
+   fake session. Restore them and the live session appears.
+2. **Token authorization:** signed-out `POST /api/rooms/<id>/token` → 401;
+   signed-in without a seat → 403; room id that is not yours/private → 404;
+   closed room → 409; >20 requests/min → 429. Responses are JSON errors
+   with truthful messages.
+3. **Join:** both browsers take seats → each shows “Connecting…” then
+   “Connected”, the other participant's tile appears, count reads 2 in room.
+4. **Mic/camera:** toggles start **off**. Allow permission → audio/video
+   flows to the other browser. Deny permission → the honest
+   “permission was denied … text chat still works” notice appears.
+5. **Chat:** messages appear in both browsers instantly; reload → history
+   is gone (ephemeral by design, no DB rows).
+6. **Host controls:** host closes the room → members’ pages refresh to the
+   closed state and the LiveKit session ends (worst case within ~1 min);
+   host removing a member kicks them out of the live session too.
+7. **Reconnect:** kill one browser's network → “Reconnecting…”, then
+   “Disconnected” with a truthful notice; *Rejoin* issues a fresh token.
+8. **Leave:** *Leave* frees the seat; the other browser's participant count
+   drops after LiveKit reports the disconnect.

@@ -11,6 +11,7 @@ import {
   LeaveRoomButton,
   RemoveSeatButton,
 } from "@/components/rooms/room-actions";
+import { RoomSession } from "@/components/rooms/session/room-session";
 import { SeatHeartbeat } from "@/components/rooms/seat-heartbeat";
 import { requireUserWithProfile } from "@/lib/auth/session";
 import {
@@ -20,6 +21,8 @@ import {
   listRoomOccupants,
   loadRoom,
 } from "@/lib/data/rooms";
+import { env } from "@/lib/env";
+import { isLivekitConfigured } from "@/lib/livekit/server";
 import { toInviteViews } from "@/lib/rooms/invite-views";
 import { EXPERIENCE_LEVEL_LABELS } from "@/lib/validation/profile";
 
@@ -56,6 +59,7 @@ export default async function RoomPage({ params }: RoomPageProps) {
   const room = roomResult.room;
   const isHost = room.host_user_id === user.id;
   const isClosed = room.status === "closed";
+  const livekitConfigured = isLivekitConfigured();
 
   const [mySeat, occupantsResult, hostName, invites, headerStore] =
     await Promise.all([
@@ -175,18 +179,51 @@ export default async function RoomPage({ params }: RoomPageProps) {
               )}
             </div>
 
-            {seated && <SeatHeartbeat roomId={room.id} />}
+            {/* Heartbeat keeps the seat alive while the page is open. Off
+                once the room closes: renewal would fail by design and
+                trigger pointless refreshes. */}
+            {seated && !isClosed && <SeatHeartbeat roomId={room.id} />}
           </section>
 
-          <section className="rounded-xl border border-dashed border-border bg-card p-6">
-            <h2 className="font-semibold">Live session</h2>
-            <Notice tone="info" className="mt-3">
-              Voice, video, chat and screen sharing switch on when LiveKit
-              connects — the next build stage. This screen currently manages
-              presence and capacity: seats, host controls and invite links are
-              fully enforced server-side.
-            </Notice>
-          </section>
+          {!isClosed && (
+            <section className="rounded-xl border border-border bg-card p-6">
+              <h2 className="sr-only">Live session</h2>
+              {seated && livekitConfigured ? (
+                <RoomSession roomId={room.id} serverUrl={env.livekitUrl} />
+              ) : seated ? (
+                <Notice tone="warning" title="Media service not configured">
+                  <p>
+                    Voice, video and chat need LiveKit credentials: add{" "}
+                    <code className="font-mono text-xs">
+                      NEXT_PUBLIC_LIVEKIT_URL
+                    </code>
+                    ,{" "}
+                    <code className="font-mono text-xs">LIVEKIT_API_KEY</code>{" "}
+                    and{" "}
+                    <code className="font-mono text-xs">
+                      LIVEKIT_API_SECRET
+                    </code>{" "}
+                    to <code className="font-mono text-xs">.env.local</code>{" "}
+                    (README → “LiveKit setup”). Seats, invites and host
+                    controls already work without them.
+                  </p>
+                </Notice>
+              ) : (
+                <Notice tone="info" title="Live session">
+                  Take a seat above to enter the live session — voice, video
+                  and the temporary room chat open as soon as you&apos;re
+                  seated.
+                  {!livekitConfigured && (
+                    <>
+                      {" "}
+                      Media also requires LiveKit keys — see README →
+                      “LiveKit setup”.
+                    </>
+                  )}
+                </Notice>
+              )}
+            </section>
+          )}
         </div>
 
         {/* Side column: details + host controls */}

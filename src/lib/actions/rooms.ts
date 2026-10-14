@@ -21,6 +21,11 @@ import {
   hashInviteToken,
   isValidInviteTokenShape,
 } from "@/lib/rooms/room-tokens";
+import {
+  endLivekitRoom,
+  getLivekitConfig,
+  kickParticipant,
+} from "@/lib/livekit/server";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { fieldErrorsOf } from "@/lib/validation/form-errors";
 import {
@@ -195,6 +200,12 @@ export async function closeRoomAction(
     return { error: "Only the host can close this room." };
   }
 
+  // Best-effort: disconnect everyone from the live session immediately.
+  // If LiveKit is unconfigured/unreachable, members' heartbeats fail and
+  // their clients refresh/disconnect on their own (fallback still safe).
+  const livekit = getLivekitConfig();
+  if (livekit) await endLivekitRoom(livekit, rawRoomId);
+
   revalidatePath(`/rooms/${rawRoomId}`);
   revalidatePath("/rooms");
   return { ok: true };
@@ -231,6 +242,11 @@ export async function removeParticipantAction(
     .eq("room_id", rawRoomId)
     .eq("user_id", targetId);
   if (error) return { error: dbErrorMessage(error) };
+
+  // Best-effort: pull the removed member out of the live session too, so a
+  // removed seat cannot keep talking. Heartbeat fallback if this fails.
+  const livekit = getLivekitConfig();
+  if (livekit) await kickParticipant(livekit, rawRoomId, targetId);
 
   revalidatePath(`/rooms/${rawRoomId}`);
   return { ok: true };
@@ -366,13 +382,18 @@ export async function joinViaInviteAction(
 /**
  * Renew the caller's EXISTING seat while the room page stays open.
  * Can never create a seat (no join without the capacity RPC), so a stale
- * page cannot sneak anyone into a room.
+ * page cannot sneak anyone into a room. Answers `ok: false` when the room
+ * has been closed — the client refreshes, ending any live session truthfully
+ * (this is how host-close propagates to seated members, within one beat).
  */
 export async function renewSeatAction(
   roomId: string,
 ): Promise<{ ok: boolean }> {
   const user = await getCurrentUser();
   if (!user || !isUuid(roomId)) return { ok: false };
+
+  const room = await loadRoom(roomId);
+  if (room.status !== "ok" || room.room.status !== "open") return { ok: false };
 
   const supabase = await createServerSupabase();
   if (!supabase) return { ok: false };
