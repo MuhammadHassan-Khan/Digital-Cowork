@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Badge, Notice } from "@/components/ui/notice";
 import { ChatPanel } from "./chat-panel";
 import { MediaControls } from "./media-controls";
+import { ShareStage } from "./share-stage";
 
 /**
  * Live media session for a seated member (Step 4).
@@ -145,6 +146,12 @@ function TokenGate({
       // toggles, so chat works even when mic/camera stay denied (PRD §4).
       audio={false}
       video={false}
+      options={{
+        // PRD §5: adaptive viewer-side quality + dynacast (stop sending
+        // layers nobody subscribes to — matters once shares multiply).
+        adaptiveStream: true,
+        dynacast: true,
+      }}
       onError={(error) =>
         setSessionError(
           error.name === "ConnectionError" ||
@@ -215,6 +222,9 @@ function SessionInner({
           </div>
         </Notice>
       )}
+
+      {/* Screen-share stage (renders only while a share is active). */}
+      <ShareStage />
 
       <div className="grid gap-3 sm:grid-cols-2">
         <ParticipantLoop participants={participants}>

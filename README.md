@@ -15,7 +15,7 @@ truthful failure states, server-side authorization.
 | 1 — Foundation, auth, profiles, discovery | Steps 1–2 | ✅ Built & verified (typecheck/tests/lint/build) — live end-to-end test pending real Supabase credentials |
 | 2 — Rooms + invites + capacity | Step 3 | ✅ Built & verified (typecheck/tests/lint/build) — live end-to-end test pending real Supabase credentials |
 | 3 — LiveKit voice/video/chat | Step 4 | ✅ Built & verified (typecheck/tests/lint/build) — live end-to-end test pending real Supabase + LiveKit credentials |
-| 4 — Screen sharing (1 share → gated multi-share) | Step 5 | ⬜ Not started |
+| 4 — Screen sharing (1 share → gated multi-share) | Step 5 | ✅ Built & verified (typecheck/tests/lint/build) — live multi-share validation pending real credentials + devices |
 | 5 — Resilience + security hardening | Step 6 | ⬜ Not started |
 | 6 — Final verification + report | Step 7 | ⬜ Not started |
 
@@ -49,6 +49,7 @@ Then fill in values:
 | `SUPABASE_SERVICE_ROLE_KEY` | Same page → service_role key (**server-only — never expose**) | Later stages |
 | `NEXT_PUBLIC_LIVEKIT_URL` | cloud.livekit.io → project → Settings/Keys (`wss://…`) | Stage 3 |
 | `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` (**server-only**) | Same page | Stage 3 |
+| `NEXT_PUBLIC_ENABLE_MULTI_SHARE` | Leave blank for the reliable single-share baseline; `true` enables experimental 2–5 simultaneous shares | Stage 4 (optional) |
 
 Without Supabase keys the app still runs and shows a clear
 "Supabase is not configured" notice on auth pages (no fake success).
@@ -187,6 +188,32 @@ npm run dev        # http://localhost:3000
   exclusively in `src/lib/livekit/server.ts` (`server-only`), so they can
   never reach the browser bundle.
 
+### Stage 4 (screen sharing)
+- **One reliable baseline:** by default exactly ONE screen share is
+  subscribed and rendered at a time. When several people share, the viewer
+  picks which one to watch (chips), and every non-selected share is
+  **unsubscribed** (`RemoteTrackPublication.setSubscribed(false)`) so
+  viewers never pay bandwidth for screens they are not watching
+  (PRD §5 "do not force every viewer to render all screen feeds").
+  Policy lives in a pure, unit-tested module
+  (`src/lib/livekit/screen-share.ts`).
+- **Experimental multi-share:** gated by `NEXT_PUBLIC_ENABLE_MULTI_SHARE=true`
+  — renders up to 5 shares (PRD stretch cap) in a labeled "Experimental
+  multi-share" grid, still honoring the cap and viewer selection. **It is
+  implemented, not validated** — no claim is made until real-device tests
+  are run and documented (PRD §5).
+- **Controls & honest states:** a *Share screen / Stop sharing* toggle
+  joins mic/camera; dismissing the picker or permission denial shows
+  "nothing was shared — voice, camera and chat keep working"; stopping via
+  the browser's native control is acknowledged through the
+  `LocalTrackUnpublished` event so the UI never claims a dead share is
+  live. Every stage tile is captioned with WHO is sharing (PRD §4).
+- **Reasonable capture/quality:** capture passes `audio: false` (no system
+  audio) + `contentHint: detail` and relies on LiveKit's default 1080p cap
+  (no forced maximum resolution); the room runs with `adaptiveStream`
+  (viewer-side adaptive quality) and `dynacast` (skip sending layers nobody
+  subscribes to) — PRD §5.
+
 ## Known limitations (by design, per PRD)
 
 - In-room chat will be ephemeral (LiveKit data packets); **no chat history**,
@@ -194,7 +221,9 @@ npm run dev        # http://localhost:3000
 - Rooms cap at **10 participants**, enforced server-side by the
   `reserve_room_seat` RPC (Stage 2).
 - Screen share: **one reliable share is the baseline**; 2–5 simultaneous
-  shares are an experimental, test-gated stretch target (Stage 4).
+  shares are an experimental, test-gated stretch target (Stage 4) —
+  implemented behind `NEXT_PUBLIC_ENABLE_MULTI_SHARE` but **not validated
+  until documented manual tests are run**.
 - Free-tier limits are real: LiveKit Build quotas and Supabase Free quotas are
   hard caps — see `ZERO_BUDGET_CAPABILITIES.md`. Monitor dashboards before demos.
 - Vercel Hobby is personal/non-commercial; verify terms before any deployment.
@@ -263,3 +292,31 @@ With **Supabase + LiveKit keys configured** and two browsers signed in:
    “Disconnected” with a truthful notice; *Rejoin* issues a fresh token.
 8. **Leave:** *Leave* frees the seat; the other browser's participant count
    drops after LiveKit reports the disconnect.
+
+## Manual test checklist (Stage 4 — screen sharing)
+
+With credentials configured and two browsers signed in (baseline, gate OFF):
+
+1. **Share:** A clicks *Share screen* → picks a window → stage appears for
+   BOTH browsers with the caption “A is sharing their screen”; A's button
+   reads *Stop sharing*.
+2. **Denial/cancel:** click share and dismiss the picker → truthful
+   “permission was denied or the picker was closed — nothing was shared”
+   notice; voice/camera/chat unaffected.
+3. **Browser stop:** A stops via the browser's own *Stop sharing* bar →
+   A's UI acknowledges the stop and the stage disappears for everyone.
+4. **Viewer choice:** B shares too → both stages are listed as chips
+   (“choose which to view”); only the selected share is subscribed —
+   switching chips swaps the rendered screen.
+5. **Standalone stop:** A clicks *Stop sharing* → same clean removal; no
+   orphan tiles, no fake “live” state.
+6. **Reconnect:** network blip while sharing → after Rejoin the share is
+   gone (unpublished) with truthful states — sharing must be restarted
+   manually.
+
+Multi-share (**experimental**, `NEXT_PUBLIC_ENABLE_MULTI_SHARE=true` —
+record devices/network and results; do NOT claim validated until done):
+
+7. Two simultaneous shares render together in the labeled grid; three to
+   five follow the same path; beyond five the cap notice appears and chips
+   swap shares in/out.

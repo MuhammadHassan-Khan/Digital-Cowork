@@ -15,6 +15,12 @@ export const env = {
   supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
   /** Public WebSocket URL of the LiveKit deployment (browser connects here). */
   livekitUrl: process.env.NEXT_PUBLIC_LIVEKIT_URL ?? "",
+  /**
+   * Experimental screen-share gate (Stage 4). Empty/false keeps the
+   * reliable single-share baseline; "true" enables the multi-share stretch
+   * target (see src/lib/livekit/screen-share.ts).
+   */
+  enableMultiShare: process.env.NEXT_PUBLIC_ENABLE_MULTI_SHARE ?? "",
 };
 
 /**
