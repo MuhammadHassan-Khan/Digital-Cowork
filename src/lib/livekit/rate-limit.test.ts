@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  INVITE_RATE_LIMIT,
   SlidingWindowLimiter,
   TOKEN_RATE_LIMIT,
 } from "@/lib/livekit/rate-limit";
@@ -44,5 +45,12 @@ describe("SlidingWindowLimiter", () => {
   it("exposes sane token limits", () => {
     expect(TOKEN_RATE_LIMIT.limit).toBeGreaterThan(0);
     expect(TOKEN_RATE_LIMIT.windowMs).toBeGreaterThan(0);
+  });
+
+  it("exposes sane invite-creation limits (PRD §7)", () => {
+    expect(INVITE_RATE_LIMIT.limit).toBeGreaterThan(0);
+    expect(INVITE_RATE_LIMIT.windowMs).toBeGreaterThan(0);
+    // Tight enough to blunt abuse, loose enough for legitimate re-links.
+    expect(INVITE_RATE_LIMIT.limit).toBeLessThanOrEqual(30);
   });
 });

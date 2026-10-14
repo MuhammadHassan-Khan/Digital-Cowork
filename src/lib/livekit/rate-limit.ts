@@ -51,8 +51,21 @@ export class SlidingWindowLimiter {
 /** Per-user token requests: 20/minute (generous for reconnects, blocks abuse). */
 export const TOKEN_RATE_LIMIT = { limit: 20, windowMs: 60_000 } as const;
 
+/**
+ * Per-user invite creations: 10/minute. PRD §7 asks for rate limits on
+ * invite creation; the 5-active-per-room cap already bounds storage, this
+ * bounds write churn and probe traffic on top of it.
+ */
+export const INVITE_RATE_LIMIT = { limit: 10, windowMs: 60_000 } as const;
+
 /** Shared singleton used by the token route (one per server process). */
 export const tokenRequestLimiter = new SlidingWindowLimiter(
   TOKEN_RATE_LIMIT.limit,
   TOKEN_RATE_LIMIT.windowMs,
+);
+
+/** Shared singleton used by createInviteAction (one per server process). */
+export const inviteRequestLimiter = new SlidingWindowLimiter(
+  INVITE_RATE_LIMIT.limit,
+  INVITE_RATE_LIMIT.windowMs,
 );

@@ -3,7 +3,6 @@
 import "@livekit/components-styles";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   LiveKitRoom,
   ParticipantLoop,
@@ -152,14 +151,27 @@ function TokenGate({
         adaptiveStream: true,
         dynacast: true,
       }}
-      onError={(error) =>
-        setSessionError(
+      onError={(error) => {
+        const status = (error as Error & { status?: number }).status;
+        if (error.name === "ConnectionError" && status === 429) {
+          // FLOW §6: quota exhaustion → truthful "temporarily unavailable",
+          // never an automatic retry loop (retries are manual via Rejoin).
+          setSessionError(
+            "The media service is temporarily unavailable — free-tier quota or a rate limit was reached. Try again in a few minutes; the app will not retry on its own.",
+          );
+          return;
+        }
+        if (
           error.name === "ConnectionError" ||
-            error.name === "SignallingConnectionError"
-            ? "Could not reach the media server — check your internet connection and retry. Your seat remains reserved."
-            : `Live session error: ${error.message}`,
-        )
-      }
+          error.name === "SignallingConnectionError"
+        ) {
+          setSessionError(
+            "Could not reach the media server — check your connection, or the session token may have expired. Press Rejoin to fetch a fresh token.",
+          );
+          return;
+        }
+        setSessionError(`Live session error: ${error.message}`);
+      }}
       onMediaDeviceFailure={(failure, kind) =>
         setDeviceFailure(deviceFailureMessage(failure, kind))
       }
@@ -168,6 +180,7 @@ function TokenGate({
         roomId={roomId}
         sessionError={sessionError}
         deviceFailure={deviceFailure}
+        onRejoin={onRetry}
       />
     </LiveKitRoom>
   );
@@ -177,12 +190,14 @@ function SessionInner({
   roomId,
   sessionError,
   deviceFailure,
+  onRejoin,
 }: {
   roomId: string;
   sessionError: string | null;
   deviceFailure: string | null;
+  /** Remounts TokenGate → requests a NEW token (expired-token recovery). */
+  onRejoin: () => void;
 }) {
-  const router = useRouter();
   const room = useRoomContext();
   const connection = useConnectionState(room);
   const participants = useParticipants();
@@ -216,7 +231,7 @@ function SessionInner({
             the room closed, the page will show that state instead.
           </p>
           <div className="mt-2">
-            <Button type="button" size="sm" onClick={() => router.refresh()}>
+            <Button type="button" size="sm" onClick={onRejoin}>
               Rejoin
             </Button>
           </div>

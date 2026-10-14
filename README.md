@@ -16,7 +16,7 @@ truthful failure states, server-side authorization.
 | 2 — Rooms + invites + capacity | Step 3 | ✅ Built & verified (typecheck/tests/lint/build) — live end-to-end test pending real Supabase credentials |
 | 3 — LiveKit voice/video/chat | Step 4 | ✅ Built & verified (typecheck/tests/lint/build) — live end-to-end test pending real Supabase + LiveKit credentials |
 | 4 — Screen sharing (1 share → gated multi-share) | Step 5 | ✅ Built & verified (typecheck/tests/lint/build) — live multi-share validation pending real credentials + devices |
-| 5 — Resilience + security hardening | Step 6 | ⬜ Not started |
+| 5 — Resilience + security hardening | Step 6 | ✅ Built & verified (typecheck/tests/lint/build) |
 | 6 — Final verification + report | Step 7 | ⬜ Not started |
 
 ## Tech stack
@@ -62,6 +62,7 @@ Without LiveKit keys, seated members see a truthful
 2. Open **SQL Editor** and run, **in order**:
    - [`supabase/migrations/0001_profiles.sql`](supabase/migrations/0001_profiles.sql)
    - [`supabase/migrations/0002_rooms.sql`](supabase/migrations/0002_rooms.sql)
+   - [`supabase/migrations/0003_hardening.sql`](supabase/migrations/0003_hardening.sql)
 
    (or use `npx supabase db push` if you prefer the CLI).
 
@@ -76,6 +77,12 @@ and `room_seats`, plus two `security definer` functions:
   session, room state and invites, serializes concurrent joins with a
   per-room advisory lock, enforces capacity, and expires abandoned seats.
 - `get_room_invite(token_hash)` — invite landing-page lookup for non-hosts.
+
+Migration `0003` applies the Stage 5 RLS review fixes: direct client writes
+to `room_seats` are revoked (seat creation can only happen through the
+advisory-locked RPC; the heartbeat keeps a column-level `expires_at`
+grant), and `room_invites` updates re-check host ownership on the new row
+state.
 
 ### 4. (Recommended) Email confirmation settings
 
@@ -214,6 +221,44 @@ npm run dev        # http://localhost:3000
   (viewer-side adaptive quality) and `dynacast` (skip sending layers nobody
   subscribes to) — PRD §5.
 
+### Stage 5 (resilience + security hardening)
+- **RLS review found and fixed two real holes** (`0003_hardening.sql`):
+  1. `room_seats` had default INSERT/UPDATE table privileges, so a hostile
+     client could bypass `reserve_room_seat` — inserting seats past
+     capacity / into private or closed rooms, or moving its seat's
+     `room_id` elsewhere. Direct seat writes are now **revoked**; seat
+     creation happens only in the advisory-locked RPC, and the heartbeat
+     keeps a column-level `update(expires_at)` grant.
+  2. The `room_invites` UPDATE policy lacked a `WITH CHECK`, allowing an
+     invite to be moved into another host's room — now re-checked.
+- **Reviewed as sound:** profiles (public read, self-write, no delete,
+  no emails), rooms (visibility-scoped read, host write, capacity/status
+  CHECK constraints), invites (host-only table, guest lookup via
+  security-definer RPC with hash checks), RPCs (revoked from
+  public/anon, granted to authenticated). The service-role key is unused.
+- **Host-only actions** route through one pure, tested authorization gate
+  (`src/lib/rooms/host-gate.ts`) with consistent messages; RLS remains
+  the enforcement boundary underneath every action check.
+- **Rate limits** (PRD §7): media tokens 20/min/user, invite creation
+  10/min/user — in-memory, per server process (documented limitation;
+  move to a shared store if you ever run multiple instances).
+- **Error matrix (FLOW §6) — every failure is a truthful state:**
+  missing Supabase/LiveKit keys → configuration notice; permission denied
+  → "…text chat still works"; reconnect → status pill + **Rejoin issues a
+  fresh token** (expired-token recovery); quota/429 → "temporarily
+  unavailable" with **no automatic retry**; room full/closed/invite
+  invalid → messages from the server, never the UI; heartbeat expiry →
+  seat released, rejoin allowed.
+- **Static security tests** (`src/lib/security/static-security.test.ts`):
+  only `NEXT_PUBLIC_*` env vars outside `server-only` modules, zero
+  console output anywhere in `src/` (log privacy), secrets module guard,
+  `.env*` git-ignored.
+- **Moderation (PRD §7):** the documented manual process is — host
+  removes a member (instant LiveKit kick), host revokes invite links,
+  host closes the room (ends everyone's session); profiles/rooms can only
+  be edited by their owner through RLS. Report abuse to the operator of
+  the deployment running this code.
+
 ## Known limitations (by design, per PRD)
 
 - In-room chat will be ephemeral (LiveKit data packets); **no chat history**,
@@ -320,3 +365,28 @@ record devices/network and results; do NOT claim validated until done):
 7. Two simultaneous shares render together in the labeled grid; three to
    five follow the same path; beyond five the cap notice appears and chips
    swap shares in/out.
+
+## Manual test checklist (Stage 5 — resilience + security)
+
+1. **Seat bypass is closed (needs migrated DB):** from a signed-in
+   browser console, `fetch('/rest/v1/room_seats',{method:'POST',headers:{...},body:JSON.stringify({room_id:'…',user_id:'<self>'})})`
+   → **permission denied**; same for PATCHing your seat's `room_id`.
+   Seats only ever appear via *Join* (the RPC).
+2. **Host checks:** as a non-host, submit crafted close/remove/revoke
+   server-action requests → consistent “Only the host can …” messages
+   (and RLS refuses the write regardless).
+3. **Rate limits:** 11th invite within a minute → truthful rate-limit
+   message; >20 token POSTs in a minute → `429` JSON.
+4. **Expired-token recovery:** in the live session, go offline →
+   *Disconnected* notice → online → *Rejoin* → a **fresh token** is
+   fetched (no stuck loop reusing the old one).
+5. **Quota error copy:** with the LiveKit plan's quota exhausted (check
+   dashboard), joining shows “temporarily unavailable — try again in a
+   few minutes”, with **no** automatic retry storm.
+6. **Host-close propagation:** close a room with a member connected →
+   their session ends and the page shows the closed state within ~1 min.
+7. **Static security tests:** `npm test` — env-exposure/console/gitignore
+   scans pass (they fail CI if a secret or log slips in later).
+8. **No secrets in logs:** complete a signup + room flow; the dev server
+   output contains no emails, tokens or keys (the app never calls
+   `console.*`).

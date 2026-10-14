@@ -26,6 +26,11 @@ import {
   getLivekitConfig,
   kickParticipant,
 } from "@/lib/livekit/server";
+import { inviteRequestLimiter } from "@/lib/livekit/rate-limit";
+import {
+  authorizeHostAction,
+  HOST_GATE_MESSAGES,
+} from "@/lib/rooms/host-gate";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { fieldErrorsOf } from "@/lib/validation/form-errors";
 import {
@@ -197,7 +202,7 @@ export async function closeRoomAction(
 
   if (error) return { error: dbErrorMessage(error) };
   if (!data || data.length === 0) {
-    return { error: "Only the host can close this room." };
+    return { error: HOST_GATE_MESSAGES.close };
   }
 
   // Best-effort: disconnect everyone from the live session immediately.
@@ -228,10 +233,13 @@ export async function removeParticipantAction(
   }
 
   const room = await loadRoom(rawRoomId);
-  if (room.status !== "ok") return { error: "That room no longer exists." };
-  if (room.room.host_user_id !== user.id) {
-    return { error: "Only the host can remove participants." };
-  }
+  const gate = authorizeHostAction({
+    callerId: user.id,
+    roomFound: room.status === "ok",
+    roomHostId: room.status === "ok" ? room.room.host_user_id : null,
+    action: "remove",
+  });
+  if (!gate.ok) return { error: gate.error };
 
   const supabase = await createServerSupabase();
   if (!supabase) return { error: NOT_CONFIGURED };
@@ -272,13 +280,21 @@ export async function createInviteAction(
   if (!user) redirect(`/login?next=${encodeURIComponent("/rooms")}`);
   if (!isUuid(rawRoomId)) return { error: "Unknown room." };
 
+  // PRD §7 rate limit: invite creation (per user, in-memory per process).
+  if (!inviteRequestLimiter.allow(`invite:${user.id}`)) {
+    return {
+      error:
+        "Too many invite links created in the last minute — wait a moment and try again.",
+    };
+  }
+
   const expiry = inviteExpirySchema.safeParse(formData.get("expiry"));
   const expiryChoice = expiry.success ? expiry.data : "never";
 
   // Host-only: RLS enforces this too, but an explicit check gives a clear
   // message and avoids a pointless insert attempt.
   if (!(await isRoomHost(rawRoomId, user.id))) {
-    return { error: "Only the host can create invite links." };
+    return { error: HOST_GATE_MESSAGES.invite };
   }
 
   const active = await countActiveInvites(rawRoomId);
@@ -331,7 +347,7 @@ export async function revokeInviteAction(
 
   if (error) return { error: dbErrorMessage(error) };
   if (!data || data.length === 0) {
-    return { error: "Only the host can revoke invite links." };
+    return { error: HOST_GATE_MESSAGES.revoke };
   }
 
   if (isUuid(rawRoomId)) revalidatePath(`/rooms/${rawRoomId}`);
