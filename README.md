@@ -17,7 +17,7 @@ truthful failure states, server-side authorization.
 | 3 — LiveKit voice/video/chat | Step 4 | ✅ Built & verified (typecheck/tests/lint/build) — live end-to-end test pending real Supabase + LiveKit credentials |
 | 4 — Screen sharing (1 share → gated multi-share) | Step 5 | ✅ Built & verified (typecheck/tests/lint/build) — live multi-share validation pending real credentials + devices |
 | 5 — Resilience + security hardening | Step 6 | ✅ Built & verified (typecheck/tests/lint/build) |
-| 6 — Final verification + report | Step 7 | ⬜ Not started |
+| 6 — Final verification + report | Step 7 | ✅ Verified — see [Final verification](#final-verification-stage-6); live multi-user tests pending credentials |
 
 ## Tech stack
 
@@ -390,3 +390,49 @@ record devices/network and results; do NOT claim validated until done):
 8. **No secrets in logs:** complete a signup + room flow; the dev server
    output contains no emails, tokens or keys (the app never calls
    `console.*`).
+
+## Final verification (Stage 6)
+
+Exact commands and results, run on a clean checkout (Node v24, Windows):
+
+| Command | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean (route typegen + `tsc --noEmit`) |
+| `npm test` | ✅ **121/121** tests, 15 files |
+| `npm run lint` | ✅ clean |
+| `npm run build` | ✅ 13 routes compiled, exit 0 |
+| `npm audit --omit=dev` | ✅ **0 production vulnerabilities** |
+| `npm audit` | ⚠️ 5 high, **dev-only** (ESLint chain: `fast-glob`/`braces` family — not shipped, force-fix would break tooling) |
+| Live HTTP (localhost:3000) | ✅ `/` 200 · `/rooms` 307→`/login` · token endpoint `503` with truthful config message |
+
+### PRD §4 acceptance status
+
+| Criterion | Status |
+|---|---|
+| Signup/sign-in with real credentials | Implemented — **live run pending credentials** |
+| Profiles + discovery | Implemented — live run pending credentials |
+| Public/private rooms, invites, join/leave | Implemented (RPC + RLS) — live run pending |
+| Max 10 enforced server-side | ✅ DB CHECK + advisory-locked RPC + seat writes revoked (`0003`) |
+| Real voice/video/chat/screen share | Implemented (Stages 3–4) — **media paths pending LiveKit keys** |
+| Share controls show who shares; sharer can stop | Implemented (captions, stop control, browser-stop detection) |
+| Private rooms hidden + bypass rejected | Implemented (RLS + revoked direct seat writes) — needs live DB to demonstrate |
+| Chat works when mic/camera denied | Implemented by design (join without media) — pending live test |
+| Reconnect/permission/quota/missing-config → clear state | ✅ states implemented; config + rate-limit paths live-verified |
+| Tests/typecheck/lint/build pass; manual tests documented | ✅ this section + checklists above |
+
+### PRD §5 (screen share)
+
+- Baseline single share, viewer-selectable tracks, unsubscribed non-chosen
+  feeds, adaptive quality: **implemented and unit-tested** (live pending).
+- 2–5 simultaneous shares: **implemented behind the gate, explicitly NOT
+  validated** — no real-device/network test has been run.
+
+### Not verified (honest list)
+
+- Any database or media path end-to-end (no Supabase/LiveKit credentials
+  have been provided): signup email flow, concurrent-join race against a
+  live PostgREST, RLS behavior in the real API, voice/video/chat/screen
+  share, host kicks over LiveKit, quota exhaustion, the 429 rate-limit
+  responses (needs an authenticated session), the staged 2→5→10 room and
+  1→5 share tests on real devices.
+- No deployment exists — nothing has been published anywhere.
