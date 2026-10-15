@@ -479,6 +479,22 @@ participant tile renders the camera-off placeholder at 16:9; ephemeral
 chat message echoes; host-only Close room / invite-links panels render
 truthfully; seat counter updates live.
 
+**Real-device media (user's own browser, client-log verified):** a real
+Chrome joined the configured LiveKit Cloud project — server handshake log
+`connected to Livekit Server edition: 1.13.9, protocol: 17, region: UAE` —
+reached `connected`, **published 3 media tracks** (consistent with mic +
+camera + screen share all enabled), collected WebRTC stats, then left
+gracefully (`disconnect` → unpublish ×3 → final stats ×3). Real
+`getUserMedia`/`getDisplayMedia` + WebRTC negotiation are therefore
+verified on a real device. Console noise in the same log (`bis_*`
+hydration attributes, `M_ID` TypeError) comes from a browser extension,
+not the app.
+
+**Still pending:** two clients seeing each other simultaneously — the DB
+shows only one seat ever taken in the live session room, so the
+second-browser test (user2 joining user1's room, mutual video/chat, host
+controls across clients) has not been run yet.
+
 **Bugs found only by live testing (both fixed):**
 
 1. RLS policy recursion on the first real database (`42P17` — policies
