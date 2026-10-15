@@ -9,10 +9,42 @@
 --   * Emails are NEVER stored here — they live only in auth.users.
 --     Discovery exposes only the fields below.
 --   * CHECK constraints mirror src/lib/validation/profile.ts exactly, so
---     client-side validation and database enforcement agree.
+--     client-side validation and database enforcement agree. (The two
+--     array rules go through IMMUTABLE helper functions because Postgres
+--     forbids subqueries directly inside a CHECK constraint — error 0A000.)
 --   * RLS: anyone may READ profiles (public discovery); only the owner may
 --     INSERT/UPDATE their own row; there is no DELETE policy on purpose.
 -- ---------------------------------------------------------------------------
+
+-- Array-rule helpers (see header): PostgreSQL rejects subqueries directly in
+-- table CHECK constraints, so the rules live here in IMMUTABLE functions and
+-- the constraints call them — identical behavior at write time.
+create or replace function public.profile_skills_len_ok(skills text[])
+returns boolean
+language sql
+immutable
+parallel safe
+set search_path = ''
+as $$
+  select not exists (select 1 from unnest(skills) s where char_length(s) > 30);
+$$;
+
+create or replace function public.profile_skills_lower_ok(skills text[])
+returns boolean
+language sql
+immutable
+parallel safe
+set search_path = ''
+as $$
+  select not exists (select 1 from unnest(skills) s where s <> lower(s));
+$$;
+
+-- CHECK evaluation runs as the writing role, so profile writers need EXECUTE
+-- (some Supabase projects revoke the implicit PUBLIC grant by default).
+grant execute on function public.profile_skills_len_ok(text[])
+  to anon, authenticated, service_role;
+grant execute on function public.profile_skills_lower_ok(text[])
+  to anon, authenticated, service_role;
 
 create table if not exists public.profiles (
   id               uuid primary key references auth.users (id) on delete cascade,
@@ -31,10 +63,10 @@ create table if not exists public.profiles (
   constraint profiles_skills_count
     check (cardinality(skills) <= 12),
   constraint profiles_skills_item_len
-    check (not exists (select 1 from unnest(skills) s where char_length(s) > 30)),
+    check (public.profile_skills_len_ok(skills)),
   -- App normalizes skills to lowercase; enforce it so search stays reliable.
   constraint profiles_skills_lowercase
-    check (not exists (select 1 from unnest(skills) s where s <> lower(s))),
+    check (public.profile_skills_lower_ok(skills)),
   constraint profiles_experience_level_valid
     check (experience_level in ('beginner', 'intermediate', 'advanced', 'expert')),
   constraint profiles_avatar_url_len
