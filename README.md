@@ -63,6 +63,7 @@ Without LiveKit keys, seated members see a truthful
    - [`supabase/migrations/0001_profiles.sql`](supabase/migrations/0001_profiles.sql)
    - [`supabase/migrations/0002_rooms.sql`](supabase/migrations/0002_rooms.sql)
    - [`supabase/migrations/0003_hardening.sql`](supabase/migrations/0003_hardening.sql)
+   - [`supabase/migrations/0004_rls_recursion_fix.sql`](supabase/migrations/0004_rls_recursion_fix.sql)
 
    (or use `npx supabase db push` if you prefer the CLI).
 
@@ -83,6 +84,14 @@ to `room_seats` are revoked (seat creation can only happen through the
 advisory-locked RPC; the heartbeat keeps a column-level `expires_at`
 grant), and `room_invites` updates re-check host ownership on the new row
 state.
+
+Migration `0004` fixes a bug only a real database could reveal (found on
+the first live run): the cross-referencing RLS policies of `0002`
+recursed into each other ("infinite recursion detected in policy",
+error `42P17`). Every cross-table check now goes through three
+`security definer` helpers (`has_active_seat`, `is_room_host`,
+`is_room_public`), which break the cycle while enforcing identical
+rules.
 
 ### 4. (Recommended) Email confirmation settings
 
@@ -231,6 +240,13 @@ npm run dev        # http://localhost:3000
      keeps a column-level `update(expires_at)` grant.
   2. The `room_invites` UPDATE policy lacked a `WITH CHECK`, allowing an
      invite to be moved into another host's room — now re-checked.
+  3. **Live-run finding (`0004_rls_recursion_fix.sql`):** against the real
+     database the cross-referencing policies recursed into each other
+     ("infinite recursion detected in policy", error `42P17`) — a class of
+     bug unit tests structurally cannot catch. Cross-table checks now route
+     through `security definer` helpers (`has_active_seat`,
+     `is_room_host`, `is_room_public`) that derive `auth.uid()` themselves
+     and can only answer questions about the caller.
 - **Reviewed as sound:** profiles (public read, self-write, no delete,
   no emails), rooms (visibility-scoped read, host write, capacity/status
   CHECK constraints), invites (host-only table, guest lookup via
