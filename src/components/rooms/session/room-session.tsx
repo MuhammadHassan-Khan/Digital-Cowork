@@ -5,14 +5,14 @@ import "@livekit/components-styles";
 import { useEffect, useState } from "react";
 import {
   LiveKitRoom,
-  ParticipantLoop,
   ParticipantTile,
   RoomAudioRenderer,
+  TrackLoop,
   useConnectionState,
-  useParticipants,
   useRoomContext,
+  useTracks,
 } from "@livekit/components-react";
-import { MediaDeviceFailure } from "livekit-client";
+import { MediaDeviceFailure, Track } from "livekit-client";
 import { Button } from "@/components/ui/button";
 import { Badge, Notice } from "@/components/ui/notice";
 import { ChatPanel } from "./chat-panel";
@@ -200,7 +200,15 @@ function SessionInner({
 }) {
   const room = useRoomContext();
   const connection = useConnectionState(room);
-  const participants = useParticipants();
+  // One tile per participant: camera track when published, a truthful
+  // placeholder (avatar, muted indicators) otherwise. TrackLoop supplies the
+  // TrackRefContext that ParticipantTile requires (ParticipantLoop only
+  // provides ParticipantContext — using it here crashed with
+  // "No TrackRef" on the first live run).
+  const cameraTracks = useTracks(
+    [{ source: Track.Source.Camera, withPlaceholder: true }],
+    { onlySubscribed: false },
+  );
 
   const status = CONNECTION_STATUS[connection] ?? CONNECTION_STATUS.disconnected;
 
@@ -211,7 +219,7 @@ function SessionInner({
           <h2 className="font-semibold">Live session</h2>
           <Badge tone={status.tone}>{status.label}</Badge>
           <span className="text-xs text-muted-foreground">
-            {participants.length} in room
+            {cameraTracks.length} in room
           </span>
         </div>
         <p className="text-xs text-muted-foreground">
@@ -242,11 +250,14 @@ function SessionInner({
       <ShareStage />
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <ParticipantLoop participants={participants}>
-          <div className="overflow-hidden rounded-lg border border-border bg-muted">
-            <ParticipantTile />
+        <TrackLoop tracks={cameraTracks}>
+          {/* The tile has no intrinsic height (placeholder is absolutely
+              positioned), so the wrapper provides the 16:9 box — same
+              pattern as ShareStage. */}
+          <div className="aspect-video overflow-hidden rounded-lg border border-border bg-muted">
+            <ParticipantTile className="h-full" />
           </div>
-        </ParticipantLoop>
+        </TrackLoop>
       </div>
 
       <MediaControls roomId={roomId} />

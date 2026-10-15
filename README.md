@@ -439,16 +439,51 @@ Exact commands and results, run on a clean checkout (Node v24, Windows):
 ### PRD §5 (screen share)
 
 - Baseline single share, viewer-selectable tracks, unsubscribed non-chosen
-  feeds, adaptive quality: **implemented and unit-tested** (live pending).
+  feeds, adaptive quality: **implemented and unit-tested**; the LiveKit
+  connection they build on is now verified live (see below), actual
+  capture pending a real-device test.
 - 2–5 simultaneous shares: **implemented behind the gate, explicitly NOT
   validated** — no real-device/network test has been run.
 
 ### Not verified (honest list)
 
-- Any database or media path end-to-end (no Supabase/LiveKit credentials
-  have been provided): signup email flow, concurrent-join race against a
-  live PostgREST, RLS behavior in the real API, voice/video/chat/screen
-  share, host kicks over LiveKit, quota exhaustion, the 429 rate-limit
-  responses (needs an authenticated session), the staged 2→5→10 room and
-  1→5 share tests on real devices.
+- Two-way real A/V between physical devices (the automated test browser
+  has no camera/mic): voice/video streams between participants, real
+  screen-share capture and viewer playback, host remove/close observed
+  from the kicked client, the staged 2→5→10 room and 1→5 share tests on
+  real devices, provider quota exhaustion, and the 429 rate-limit
+  responses over authenticated HTTP (the limiter is in-memory,
+  per-process).
 - No deployment exists — nothing has been published anywhere.
+
+## Live verification log (2026-10-15, real credentials)
+
+Supabase project `pjysjfnxvdzqztrgwjfe` + LiveKit Cloud
+`connecthubmvp-4jnjfo6k` configured in `.env.local` (gitignored).
+Migrations `0001`–`0004` applied. LiveKit credentials validated directly
+against the LiveKit REST API (`ListRooms` → 200 with a signed JWT).
+
+**Server-side battery (3 real accounts via admin API, REST):** all checks
+passed — profile inserts + `profiles_skills_lowercase` constraint
+rejection (0001 helpers), room/invite creation, `get_room_invite` guest
+lookup (`valid: true`), joins `ok`/`ok`/`room_full` (capacity enforced
+server-side on a live DB), policy read-backs through the 0004 helper
+path, heartbeat `204`, hostile seat-move **403** and hostile direct seat
+INSERT **403** (0003 revokes), private-room `invite_required` + hidden
+from non-members + join-with-invite `ok`, closed-room `room_closed`.
+
+**Browser session (automated Chrome, real login):** sign-in → discovery
+(2 members visible) → create room via server action → take a seat →
+token endpoint → **LiveKit "Connected"** against the real Cloud project;
+participant tile renders the camera-off placeholder at 16:9; ephemeral
+chat message echoes; host-only Close room / invite-links panels render
+truthfully; seat counter updates live.
+
+**Bugs found only by live testing (both fixed):**
+
+1. RLS policy recursion on the first real database (`42P17` — policies
+   cross-referenced each other) → fixed in `0004_rls_recursion_fix.sql`.
+2. `ParticipantTile` crashed with "No TrackRef" inside `ParticipantLoop`
+   (it requires `TrackRefContext`) and its wrapper collapsed to zero
+   height → switched to `TrackLoop` + `useTracks(camera,
+   withPlaceholder)` and an `aspect-video` wrapper.
