@@ -75,9 +75,12 @@ create table if not exists public.room_seats (
   primary key (room_id, user_id)
 );
 
-create index if not exists room_seats_room_active_idx
-  on public.room_seats (room_id)
-  where expires_at > now();
+-- NOTE: a partial predicate `where expires_at > now()` is illegal here —
+-- index predicates may only use IMMUTABLE functions and now() is STABLE
+-- (PostgreSQL error 42P17). Expired rows are reaped inside
+-- reserve_room_seat anyway, so a full (room_id) index is the right shape.
+create index if not exists room_seats_room_idx
+  on public.room_seats (room_id);
 
 -- updated_at trigger for rooms ----------------------------------------------
 drop trigger if exists rooms_set_updated_at on public.rooms;
