@@ -29,6 +29,14 @@
   --danger-border: #fecaca;
   --danger-text: #991b1b;
   color-scheme: light;
+
+  /* Motion tokens (modern-web-design): consistent timing + easing. */
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-slow: 700ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --shadow-lift: 0 14px 34px -16px rgb(0 0 0 / 0.35);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -41,7 +49,7 @@
     --muted-foreground: #9a9aa8;
     --border: #26262f;
     --input: #34343f;
-    --primary: #6366f1;
+    --primary: #5e60f0;
     --primary-hover: #818cf8;
     --primary-foreground: #ffffff;
     --ring: #818cf8;
@@ -87,6 +95,24 @@
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
 
+/* Fluid display type (bold minimalism): scales smoothly with the viewport
+   instead of jumping between breakpoint sizes. */
+@utility text-display-lg {
+  font-size: clamp(2.5rem, 1.7rem + 3.4vw, 4.5rem);
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+@utility text-display-md {
+  font-size: clamp(1.75rem, 1.45rem + 1.5vw, 2.75rem);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+  text-wrap: balance;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
@@ -100,12 +126,207 @@ body {
   outline-offset: 2px;
 }
 
-/* Respect reduced-motion preferences. */
+/* Respect reduced-motion preferences (skill: never animate against user
+   preference). Landing reveals get their own override at the end of this
+   file so it wins the cascade over the base .reveal state. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Smooth in-page anchor scrolling for the hero scroll cue. */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Sticky header must not cover anchored section headings. */
+section[id] {
+  scroll-margin-top: 5.5rem;
+}
+
+/* ---------------------------------------------------------------------------
+   Landing page (modern-web-design skill): ambient hero background, scroll
+   reveals, glass panel and micro-interactions. All motion is transform/opacity
+   only (GPU-composited); positions/colors come from the semantic tokens.
+--------------------------------------------------------------------------- */
+
+/* Dotted grid that fades out toward the middle of the hero. */
+.hero-grid {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    var(--border) 1.5px,
+    transparent 0
+  );
+  background-size: 30px 30px;
+  -webkit-mask-image: radial-gradient(
+    ellipse 65% 55% at 50% 45%,
+    #000 25%,
+    transparent 78%
+  );
+  mask-image: radial-gradient(
+    ellipse 65% 55% at 50% 45%,
+    #000 25%,
+    transparent 78%
+  );
+  pointer-events: none;
+}
+
+/* Soft drifting glow — positioned with utilities, animated in CSS. */
+.glow {
+  position: absolute;
+  border-radius: 9999px;
+  background: var(--primary);
+  opacity: 0.22;
+  filter: blur(90px);
+  pointer-events: none;
+  animation: glow-drift 20s ease-in-out infinite alternate;
+}
+
+@media (max-width: 640px) {
+  .glow {
+    opacity: 0.16;
+  }
+}
+
+@keyframes glow-drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(3%, -4%, 0) scale(1.12);
+  }
+}
+
+/* Scroll reveal: hidden until IntersectionObserver adds .is-visible.
+   Without JS the <noscript> override on the landing page shows content. */
+.reveal {
+  opacity: 0;
+  transform: translate3d(0, 1.5rem, 0);
+  transition:
+    opacity var(--duration-slow) var(--ease-out),
+    transform var(--duration-slow) var(--ease-out);
+}
+
+.reveal.is-visible {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+/* CTA micro-interactions: lift on hover, press in on :active. */
+.landing-cta {
+  transition:
+    transform var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-normal) var(--ease-out),
+    background-color var(--duration-normal) var(--ease-out),
+    border-color var(--duration-normal) var(--ease-out),
+    color var(--duration-normal) var(--ease-out);
+}
+
+.landing-cta:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lift);
+}
+
+.landing-cta:active {
+  transform: translateY(0) scale(0.98);
+  box-shadow: none;
+}
+
+/* Feature card: depth + accent border on hover. */
+.feature-card {
+  height: 100%;
+  padding: clamp(1.25rem, 1rem + 1vw, 1.75rem);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--card);
+  transition:
+    transform var(--duration-normal) var(--ease-out),
+    box-shadow var(--duration-normal) var(--ease-out),
+    border-color var(--duration-normal) var(--ease-out);
+}
+
+.feature-card:hover {
+  transform: translateY(-4px);
+  border-color: color-mix(in oklab, var(--primary) 40%, var(--border));
+  box-shadow: var(--shadow-lift);
+}
+
+/* Frosted-glass CTA panel. */
+.glass-panel {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 1.5rem;
+  background: color-mix(in oklab, var(--card) 72%, transparent);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  box-shadow: 0 8px 40px -16px rgb(0 0 0 / 0.3);
+}
+
+/* Hero scroll cue: a pulse of primary color dropping down a hairline. */
+.scroll-cue {
+  position: absolute;
+  bottom: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.scroll-cue__rail {
+  position: relative;
+  width: 1px;
+  height: 2.5rem;
+  overflow: hidden;
+  background: var(--border);
+}
+
+.scroll-cue__rail::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 45%;
+  background: var(--primary);
+  animation: cue-drop 2.4s var(--ease-out) infinite;
+}
+
+@keyframes cue-drop {
+  0% {
+    transform: translate3d(0, -110%, 0);
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(0, 260%, 0);
+    opacity: 0;
+  }
+}
+
+/* Reduced motion: show all reveal content immediately, with no transition.
+   Kept at the end of the file so it beats the base .reveal state above
+   (same specificity, later in the cascade). */
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
   }
 }
